@@ -1,4 +1,5 @@
 const puppeteer = require("puppeteer");
+const fs = require("fs");
 
 (async () => {
   const browser = await puppeteer.launch({ headless: false });
@@ -26,7 +27,7 @@ const puppeteer = require("puppeteer");
 
   urlArr = urlArr.flat();
 
-  //   console.log(urlArr);
+  //   console.log(urlArr.length);
 
   let camps = [];
 
@@ -72,11 +73,11 @@ const puppeteer = require("puppeteer");
         }
       }
     });
-    camp.contact = await page.evaluate(() => {
+    camp.web = await page.evaluate(() => {
       for (const a of document.querySelectorAll("span.notranslate a")) {
         if (a.textContent.includes(".ru")) {
-          let contact = a.textContent;
-          return contact;
+          let web = a.textContent;
+          return web;
         }
       }
     });
@@ -98,7 +99,11 @@ const puppeteer = require("puppeteer");
     camps.push(camp);
   }
 
-  console.log(camps);
+  //   console.log(camps.length);
+
+  fs.writeFileSync("./rvland_parser.json", JSON.stringify(camps), {
+    encoding: "utf-8",
+  });
 
   await browser.close();
 })();
