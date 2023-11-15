@@ -1,23 +1,45 @@
-const puppeteer = require("puppeteer");
+import axios from "axios";
+import jsdom from "jsdom";
+const { JSDOM } = jsdom;
 const fs = require("fs");
 
 (async () => {
-  const browser = await puppeteer.launch({ headless: false });
-  const page = await browser.newPage();
-
   //получение camps urls
 
   let paginationPage = 1;
   let url = `https://rvland.ru/campings/region/all/page/${paginationPage}/`;
-  let urlArr: string[] = [];
+  let html: string = "";
+  let urlArr = [];
+
+  type Tcamp = {
+    title: string;
+    shortDesc: string;
+    desc: string;
+    photos?: (string | null)[];
+    address: string;
+    coords: string;
+    tel?: string;
+    web?: string;
+    tags?: (string | null)[];
+    reviews?: (string | null)[];
+  };
 
   do {
-    await page.goto(url);
+    try {
+      const resp = await axios.get(url);
+      html = resp.data;
+    } catch (error) {
+      console.log(error);
+    }
 
-    const campUrls = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll("h2 a"), (el) =>
-        el.getAttribute("href")
-      );
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+    const campUrls: (string | null)[] = [];
+
+    let list = document.querySelectorAll("h2 a");
+
+    list.forEach((node) => {
+      campUrls.push(node.getAttribute("href"));
     });
 
     urlArr.push(campUrls);
@@ -30,96 +52,63 @@ const fs = require("fs");
 
   //получение camps info
 
-  const camps: object[] = [];
+  const camps: Tcamp[] = [];
 
-  for (const el of urlArr) {
-    await page.goto(el);
+  for (const url of urlArr) {
+    if (url) {
+      try {
+        const resp = await axios.get(url);
+        html = resp.data;
+      } catch (error) {
+        console.log(error);
+      }
+    }
 
-    const camp: {
-      title: string;
-      shortDesc: string;
-      desc: string;
-      photos: string[];
-      adress: string;
-      coords: string;
-      tel?: string;
-      web?: string;
-      tags: string[];
-      reviews?: string[];
-    } = {
-      title: await page.evaluate(() => {
-        let element = document.querySelector("h1") as HTMLHeadingElement;
-        if (element) {
-          return element.innerText;
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+
+    const getInfo = (htmlElement: string) => {
+      const info = document.querySelector(htmlElement)?.textContent;
+      if (info) {
+        return info;
+      } else {
+        return "информация отсутствует";
+      }
+    };
+
+    const getAllInfo = (htmlElement: string, attr: string) => {
+      const arr: (string | null)[] = [];
+      const list = document.querySelectorAll(htmlElement);
+
+      if (attr === "photos") {
+        list.forEach((node) => arr.push(node.getAttribute("href")));
+        return arr;
+      } else if (attr === "tags" || attr === "reviews") {
+        list.forEach((node) => arr.push(node.textContent));
+        return arr;
+      }
+    };
+
+    const getInfoByCondition = (htmlElement: string, condition: string) => {
+      const list = document.querySelectorAll(htmlElement);
+      for (const el of list) {
+        if (el.textContent && el.textContent.includes(condition)) {
+          return el.textContent;
         }
-      }),
-      shortDesc: await page.evaluate(() => {
-        let element = document.querySelector(
-          "div.desc.txt_18_24"
-        ) as HTMLBodyElement;
-        if (element) {
-          return element.innerText;
-        }
-      }),
-      desc: await page.evaluate(() => {
-        let element = document.querySelector(
-          "div.format_mce"
-        ) as HTMLBodyElement;
-        if (element) {
-          return element.innerText;
-        }
-      }),
-      photos: await page.evaluate(() => {
-        return Array.from(document.querySelectorAll("div.gallery a"), (el) =>
-          el.getAttribute("href")
-        );
-      }),
-      adress: await page.evaluate(() => {
-        let element = document.querySelector(
-          "div.method span"
-        ) as HTMLBodyElement;
-        if (element) {
-          return element.innerText;
-        }
-      }),
-      coords: await page.evaluate(() => {
-        let element = document.querySelector(
-          "div.method span.notranslate"
-        ) as HTMLBodyElement;
-        if (element) {
-          return element.innerText;
-        }
-      }),
-      tel: await page.evaluate(() => {
-        for (const a of document.querySelectorAll("a")) {
-          if (a.textContent && a.textContent.includes("+7")) {
-            return a.textContent;
-          }
-        }
-      }),
-      web: await page.evaluate(() => {
-        for (const a of document.querySelectorAll("span.notranslate a")) {
-          if (a.textContent && a.textContent.includes(".ru")) {
-            return a.textContent;
-          }
-        }
-      }),
-      tags: await page.evaluate(() => {
-        const tags: string[] = [];
-        const elements = Array.from(
-          document.querySelectorAll("div.item")
-        ) as HTMLElement[];
-        elements.forEach((el) => tags.push(el.innerText));
-        return tags;
-      }),
-      reviews: await page.evaluate(() => {
-        const reviews: string[] = [];
-        const elements = Array.from(
-          document.querySelectorAll("div.item_review")
-        ) as HTMLElement[];
-        elements.forEach((el) => reviews.push(el.innerText));
-        return reviews;
-      }),
+      }
+    };
+
+    const camp: Tcamp = {
+      title: getInfo("h1"),
+      shortDesc: getInfo("div.desc.txt_18_24"),
+      desc: getInfo("div.format_mce"),
+      photos: getAllInfo("div.gallery a", "photos"),
+      address: getInfo("div.method span"),
+      coords: getInfo("div.method span.notranslate"),
+      tel: getInfoByCondition("a", "+7"),
+      web: getInfoByCondition("span.notranslate a", ".ru"),
+      tags: getAllInfo("div.item", "tags"),
+      reviews: getAllInfo("div.item_review", "reviews"),
     };
 
     camps.push(camp);
@@ -128,6 +117,4 @@ const fs = require("fs");
   fs.writeFileSync("./rvland_parser.json", JSON.stringify(camps), {
     encoding: "utf-8",
   });
-
-  await browser.close();
 })();
