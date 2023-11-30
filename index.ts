@@ -3,118 +3,127 @@ import jsdom from "jsdom";
 const { JSDOM } = jsdom;
 const fs = require("fs");
 
-(async () => {
-  //получение camps urls
-
-  let paginationPage = 1;
-  let url = `https://rvland.ru/campings/region/all/page/${paginationPage}/`;
-  let html: string = "";
+const getParser = async () => {
+  let maxPaginationPage = 4;
+  let html: string | undefined = "";
   let urlArr = [];
 
-  type Tcamp = {
+  const defaultValues = {
+    noInfo: "информация отсутствует",
+    noCampPage: "страница кемпинга не найдена",
+  };
+
+  type TArrOfStrings = (string | null)[];
+
+  type TCamp = {
     title: string;
     shortDesc: string;
     desc: string;
-    photos?: (string | null)[];
+    photos?: TArrOfStrings;
     address: string;
     coords: string;
     tel?: string;
     web?: string;
-    tags?: (string | null)[];
-    reviews?: (string | null)[];
+    tags?: TArrOfStrings;
+    reviews?: TArrOfStrings;
   };
 
-  do {
+  //получение camps urls
+
+  for (let i = 1; i <= maxPaginationPage; i++) {
+    let url = `https://rvland.ru/campings/region/all/page/${i}/`;
+
     try {
       const resp = await axios.get(url);
       html = resp.data;
     } catch (error) {
-      console.log(error);
+      console.log(`страница ${i} списка не найдена`);
+      break;
     }
 
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
-    const campUrls: (string | null)[] = [];
+    if (html != undefined) {
+      const dom = new JSDOM(html);
+      const document = dom.window.document;
+      const campUrls: (string | null)[] = [];
 
-    let list = document.querySelectorAll("h2 a");
+      let list = document.querySelectorAll("h2 a");
 
-    list.forEach((node) => {
-      campUrls.push(node.getAttribute("href"));
-    });
+      list.forEach((node) => {
+        campUrls.push(node.getAttribute("href"));
+      });
 
-    urlArr.push(campUrls);
-
-    paginationPage += 1;
-    url = `https://rvland.ru/campings/region/all/page/${paginationPage}/`;
-  } while (paginationPage <= 34);
+      urlArr.push(campUrls);
+    }
+  }
 
   urlArr = urlArr.flat();
 
   //получение camps info
 
-  const camps: Tcamp[] = [];
+  const camps: TCamp[] = [];
 
-  for (const url of urlArr) {
-    if (url) {
+  for (const el of urlArr) {
+    if (el) {
       try {
-        const resp = await axios.get(url);
+        const resp = await axios.get(el);
         html = resp.data;
       } catch (error) {
-        console.log(error);
+        console.log(defaultValues.noCampPage);
+        break;
       }
     }
 
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
+    if (html != undefined) {
+      const dom = new JSDOM(html);
+      const document = dom.window.document;
 
-    const getInfo = (htmlElement: string) => {
-      const info = document.querySelector(htmlElement)?.textContent;
-      if (info) {
-        return info;
-      } else {
-        return "информация отсутствует";
-      }
-    };
+      const getInfo = (htmlElement: string) => {
+        const info = document.querySelector(htmlElement)?.textContent;
+        return info || defaultValues.noInfo;
+      };
 
-    const getAllInfo = (htmlElement: string, attr: string) => {
-      const arr: (string | null)[] = [];
-      const list = document.querySelectorAll(htmlElement);
+      const getAllInfo = (htmlElement: string, attr: string) => {
+        const arr: (string | null)[] = [];
+        const list = document.querySelectorAll(htmlElement);
 
-      if (attr === "photos") {
-        list.forEach((node) => arr.push(node.getAttribute("href")));
-        return arr;
-      } else if (attr === "tags" || attr === "reviews") {
-        list.forEach((node) => arr.push(node.textContent));
-        return arr;
-      }
-    };
-
-    const getInfoByCondition = (htmlElement: string, condition: string) => {
-      const list = document.querySelectorAll(htmlElement);
-      for (const el of list) {
-        if (el.textContent && el.textContent.includes(condition)) {
-          return el.textContent;
+        if (attr === "photos") {
+          list.forEach((node) => arr.push(node.getAttribute("href")));
+          return arr || defaultValues.noInfo; //всеравно возвращает undefined
+        } else if (attr === "tags" || attr === "reviews") {
+          list.forEach((node) => arr.push(node.textContent));
+          return arr || defaultValues.noInfo; //всеравно возвращает undefined
         }
-      }
-    };
+      };
 
-    const camp: Tcamp = {
-      title: getInfo("h1"),
-      shortDesc: getInfo("div.desc.txt_18_24"),
-      desc: getInfo("div.format_mce"),
-      photos: getAllInfo("div.gallery a", "photos"),
-      address: getInfo("div.method span"),
-      coords: getInfo("div.method span.notranslate"),
-      tel: getInfoByCondition("a", "+7"),
-      web: getInfoByCondition("span.notranslate a", ".ru"),
-      tags: getAllInfo("div.item", "tags"),
-      reviews: getAllInfo("div.item_review", "reviews"),
-    };
+      const getInfoByCondition = (htmlElement: string, condition: string) => {
+        const list = document.querySelectorAll(htmlElement);
+        for (const el of list) {
+          if (el.textContent && el.textContent.includes(condition)) {
+            return el.textContent || defaultValues.noInfo; //всеравно возвращает undefined
+          }
+        }
+      };
 
-    camps.push(camp);
+      const camp: TCamp = {
+        title: getInfo("h1"),
+        shortDesc: getInfo("div.desc.txt_18_24"),
+        desc: getInfo("div.format_mce"),
+        photos: getAllInfo("div.gallery a", "photos"),
+        address: getInfo("div.method span"),
+        coords: getInfo("div.method span.notranslate"),
+        tel: getInfoByCondition("a", "+7"),
+        web: getInfoByCondition("span.notranslate a", ".ru"),
+        tags: getAllInfo("div.item", "tags"),
+        reviews: getAllInfo("div.item_review", "reviews"),
+      };
+      camps.push(camp);
+    }
   }
+  console.log(camps);
 
   fs.writeFileSync("./rvland_parser.json", JSON.stringify(camps), {
     encoding: "utf-8",
   });
-})();
+};
+
+getParser();
