@@ -11,7 +11,6 @@
   "dependencies": {
     "@types/jsdom": "^21.1.5",
     "axios": "^1.6.1",
-    "jsdom": "^22.1.0",
-    "puppeteer": "^21.3.8"
+    "jsdom": "^22.1.0"
   }
 }
