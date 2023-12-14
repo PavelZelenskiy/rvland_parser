@@ -9,6 +9,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "puppeteer": "^21.3.8"
+    "@types/jsdom": "^21.1.5",
+    "axios": "^1.6.1",
+    "jsdom": "^22.1.0"
   }
 }
