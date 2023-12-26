@@ -6,7 +6,7 @@ import { getInfoBySelector } from "./utils/getInfoBySelector";
 import { InfoTypes } from "./utils/infoTypes";
 
 const getParser = async (url: string) => {
-  const maxPaginationPage = 1;
+  const maxPaginationPage = 34;
 
   type TCamp = {
     title: string;
